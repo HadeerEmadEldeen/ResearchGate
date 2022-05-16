@@ -25,7 +25,7 @@
     margin: 15px auto;
     font-weight: 900;
     font-family: "Times New Roman", Times, serif;
-    font-size: 28px;
+    font-size: 27px;
 }
 
 .paper-publish-date {
@@ -192,7 +192,7 @@
 }
 
 hr {
-    width: 410px;
+    /*width: 410px;*/
     color: whitesmoke;
 }
 
@@ -254,22 +254,38 @@ hr {
 
 .comment-content {
     font-size: 14px;
-    /*margin-top: -35px;*/
     padding: 3px;
     max-width: 250px;
     overflow-wrap: break-spaces;
     font-weight: 300;
-    text-align: right;
+    text-align: left;
+    margin-left: 75px;
 }
 
 .edit-button {
     padding: 0px 20px;
+    cursor: pointer;
+    display: inline-grid;
+}
+
+.update-button {
+    display: none;
 }
 
 .delete-button {
-
+    cursor: pointer;
+    display: inline-grid;
 }
 
-#likes-dislikes-box {
+.edit-button i, .update-button i, .delete-button i {
+    font-size: 18px;
+}
 
+.edit-button i:hover, .update-button i:hover, .delete-button i:hover {
+    outline: 4px;
+    box-shadow: 0px 10px 10px 0px rgba(0,0,0,0.8);
+}
+
+.fixed-img {
+    display: inline;
 }

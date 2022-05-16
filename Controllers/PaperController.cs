@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Data.Entity.Validation;
 using System.Linq;
 using System.Web;
@@ -12,6 +13,7 @@ namespace Research_Gate.Controllers
     public class PaperController : Controller
     {
         private AuthorPaperViewModel authorPaperViewModel = new AuthorPaperViewModel();
+        private UploadPaperViewModel uploadPaperViewModel = new UploadPaperViewModel();
         private ResearchgateDBContext dbContext = new ResearchgateDBContext();
 
         // GET: Paper
@@ -39,51 +41,70 @@ namespace Research_Gate.Controllers
             if (Session["id"] == null)
                 return RedirectToAction("Login", "Account");
 
-            return View();
+
+            int authorID = (int)Session["id"];
+
+            UploadPaperViewModel.Authors = dbContext.Authors.Where(x => x.Author_id != authorID).ToList();
+            
+            uploadPaperViewModel.Paper = new Paper
+            {
+                File = "default"
+            };
+
+            return View(uploadPaperViewModel);
         }
 
 
         [HttpPost]
-        public ActionResult Upload(string title, List<int> authorsIds, HttpPostedFileBase file)
+        [ValidateAntiForgeryToken]
+        public ActionResult Upload(UploadPaperViewModel model, HttpPostedFileBase file)
         {
+            model.Paper.Publish_date = DateTime.Now;
+            
             if (ModelState.IsValid)
             {
-                DateTime publishDate = DateTime.Now;
-                string paperName;
-                string paperExtension;
-                string path;
-                int paperId;
-
-
-                Paper paper = new Paper()
+                if (file == null)
                 {
-                    Publish_date = publishDate,
-                    Title = title,
-                    File = "path"
-                };
-                dbContext.Papers.Add(paper);
+                    ModelState.AddModelError("File", "You must upload paper file.");
+                   
+                    return View(uploadPaperViewModel);
+                }
+
+                dbContext.Papers.Add(model.Paper);
                 dbContext.SaveChanges();
 
-                paperId = dbContext.Papers.ToList().Last().Paper_id;
-                paperExtension = System.IO.Path.GetExtension(file.FileName);
-                paperName = Controllers.FileNameGenerator.GeneratePaperName(paperId, authorsIds.First(), paperExtension);
-                path = Server.MapPath(Controllers.FileUtility.GetPaperFile(paperName));
+                int paperId = model.Paper.Paper_id;
+                
+                int authorID = (int)Session["id"];
+                
+                
+                string paperExtension = System.IO.Path.GetExtension(file.FileName);
+                string paperName = Controllers.FileNameGenerator.GeneratePaperName(paperId, authorID, paperExtension);
+                string path = Server.MapPath(Controllers.FileUtility.GetPaperFile(paperName));
+
                 file.SaveAs(path);
+                
                 dbContext.Papers.SingleOrDefault(p => p.Paper_id == paperId).File = paperName;
-                authorPaperViewModel.Paper = dbContext.Papers.Where(p => p.Paper_id == paperId).FirstOrDefault();
-                foreach (int authorId in authorsIds)
+                
+
+                model.Paper.Participation.Add(dbContext.Authors.SingleOrDefault(x => x.Author_id == authorID));
+
+                if (model.SelectedAuthors != null)
                 {
-                    authorPaperViewModel.Author = dbContext.Authors.Where(a => a.Author_id == authorId).FirstOrDefault();
-                    authorPaperViewModel.Paper.Participation.Add(authorPaperViewModel.Author);
+                    foreach (string authorId in model.SelectedAuthors)
+                    {
+                        int id = Int32.Parse(authorId);
+                        authorPaperViewModel.Author = dbContext.Authors.SingleOrDefault(a => a.Author_id == id);
+                        model.Paper.Participation.Add(authorPaperViewModel.Author);
+                    }
                 }
+
                 dbContext.SaveChanges();
 
                 return RedirectToAction("Index", new { id = paperId });
             }
-            else
-            {
-                return View();
-            }
+
+            return RedirectToAction("Upload", "Paper");
         }
 
         [HttpPost]
@@ -132,54 +153,66 @@ namespace Research_Gate.Controllers
         }
 
         [HttpPost]
-        [Route("paper/Comment/{paperId}/{comment}")]
         public ActionResult Comment(int paperId, string comment)
         {
             int authorId = (int)Session["id"];
-            DateTime dateTime = DateTime.Now;
+
             if (comment != null)
             {
-                Models.Comment c = new Comment()
+                Comment c = new Comment()
                 {
                     Author_id = authorId,
                     Paper_id = paperId,
                     Content = comment,
-                    Time = dateTime
+                    Time = DateTime.Now,
+                    Author = dbContext.Authors.FirstOrDefault(a => a.Author_id == authorId)
                 };
 
                 dbContext.Comments.Add(c);
                 dbContext.SaveChanges();
             }
-            return RedirectToAction("Index", paperId);
+
+            authorPaperViewModel.Paper = dbContext.Papers.SingleOrDefault(p => p.Paper_id == paperId);
+
+            IEnumerable<Comment> comments = authorPaperViewModel.Paper.Comments.OrderByDescending(c => c.Time).ToList();
+            
+            return PartialView("_Comments", comments);
         }
 
         [HttpPost]
-        [Route("paper/EditComment/{commentId}/{newComment}")]
         public ActionResult EditComment(int commentId, string newComment)
         {
-            DateTime dateTime = DateTime.Now;
+            Comment editedComment = dbContext.Comments.Where(c => c.Comment_id == commentId).FirstOrDefault();
 
-            Models.Comment editedComment = dbContext.Comments.Where(c => c.Comment_id == commentId).FirstOrDefault();
-
-            if (newComment != null)
+            if (newComment != null && newComment != editedComment.Content)
             {
                 editedComment.Content = newComment;
-                editedComment.Time = dateTime;
+                editedComment.Time = DateTime.Now;
                 dbContext.SaveChanges();
             }
-            return RedirectToAction("Index", editedComment.Paper_id);
+
+            authorPaperViewModel.Paper = dbContext.Papers.SingleOrDefault(p => p.Paper_id == editedComment.Paper_id);
+
+            IEnumerable<Comment> comments = authorPaperViewModel.Paper.Comments.OrderByDescending(c => c.Time).ToList();
+
+            return PartialView("_Comments", comments);
         }
 
         [HttpPost]
-        [Route("paper/DeleteComment/{commentId}")]
+        [Route("Paper/DeleteComment/{commentId}")]
         public ActionResult DeleteComment(int commentId)
         {
-            Models.Comment comment = dbContext.Comments.Where(c => c.Comment_id == commentId).FirstOrDefault();
+            Comment comment = dbContext.Comments.Where(c => c.Comment_id == commentId).FirstOrDefault();
+
             int paperId = comment.Paper_id;
             dbContext.Comments.Remove(comment);
             dbContext.SaveChanges();
 
-            return RedirectToAction("Index", paperId);
+            authorPaperViewModel.Paper = dbContext.Papers.SingleOrDefault(p => p.Paper_id == paperId);
+
+            IEnumerable<Comment> comments = authorPaperViewModel.Paper.Comments.OrderByDescending(c => c.Time).ToList();
+
+            return PartialView("_Comments", comments);
         }
 
     }
